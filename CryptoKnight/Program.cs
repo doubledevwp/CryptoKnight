@@ -78,6 +78,7 @@ namespace CryptoKnight
             {
                 // Wait for socket to open and get prices, etc.
             }
+            
             var areReportsSent = false;
             var timer = DateTime.Now;
             Log.Information("Now scanning cryptocurrencies...");
@@ -88,12 +89,15 @@ namespace CryptoKnight
                 try
                 {
                     #region Buy Coins
+                    _productStats.Clear();
                     foreach (var coin in allCoins)
                     {
                         try
                         {
                             var stat = new DailyStat(coin.Id, Mammon.ProductsService.GetProductStatsAsync(coin.Id).Result);
                             ThrottleSpeedPublic();
+
+                            _productStats.Add(stat);
 
                             foreach (var client in Clauneck)
                             {
