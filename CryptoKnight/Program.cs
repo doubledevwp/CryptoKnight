@@ -88,6 +88,8 @@ namespace CryptoKnight
             {
                 try
                 {
+                    Console.Write("."); // Lets you know it's still scanning.
+
                     #region Buy Coins
                     _productStats.Clear();
                     foreach (var coin in allCoins)
