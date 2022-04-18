@@ -378,12 +378,12 @@ namespace CryptoKnight
 
         private static void ThrottleSpeedPublic()
         {
-            Thread.Sleep(300);
+            Thread.Sleep(67);
         }
 
         private static void ThrottleSpeedPrivate()
         {
-            Thread.Sleep(200);
+            Thread.Sleep(34);
         }
         
         /// <summary>
