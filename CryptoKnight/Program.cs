@@ -259,8 +259,7 @@ namespace CryptoKnight
                                 {
                                     // Handle existing orders
                                     var currentPrice = GetCurrentPrice(order.ProductId);
-                                    var coin = Mammon.ProductsService.GetSingleProductAsync(order.ProductId).Result;
-                                    ThrottleSpeedPublic();
+                                    var coin = allCoins.FirstOrDefault(x => x.Id == order.ProductId);
 
                                     var trailingDistance = GetTrailingDistance(coin);
 
