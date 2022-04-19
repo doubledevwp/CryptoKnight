@@ -197,7 +197,7 @@ namespace CryptoKnight
                                             {
                                                 investment = coin.MaxMarketFunds;
                                             }
-                                            var size = investment / price;
+                                            var size = investment / limitPrice;
                                             var remainderSize = size % coin.BaseIncrement;
                                             if (remainderSize > 0)
                                             {
@@ -210,7 +210,7 @@ namespace CryptoKnight
 
                                             if(investment >= coin.MinMarketFunds && size >= coin.BaseMinSize)
                                             {
-                                                client.OrdersService.PlaceStopOrderAsync(CoinbasePro.Services.Orders.Types.OrderSide.Buy, coin.Id, size, price, stopPrice).Wait();
+                                                client.OrdersService.PlaceStopOrderAsync(CoinbasePro.Services.Orders.Types.OrderSide.Buy, coin.Id, size, limitPrice, stopPrice).Wait();
                                                 ThrottleSpeedPrivate();
                                                 Log.Information($"BUY trailing stop order created for {client.Name} on coin {coin.Id} for ${price} per unit.");
                                             }
