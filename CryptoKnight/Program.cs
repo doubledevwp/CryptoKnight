@@ -60,7 +60,7 @@ namespace CryptoKnight
 
             Log.Information("CryptoKnight (c) James Hickok.");
             Log.Information("Put your Coinbase Pro API key information into the keys.csv file.");
-            Log.Information("The format is name,passphrase,secret,key.");
+            Log.Information("The format is Name,Passphrase,Secret,Key,Email.");
             Log.Information("Use this to help the people you care about.");
             Log.Information("Make the world a better place...one 'Act of Random Kindness' at a time.");
 
@@ -132,6 +132,17 @@ namespace CryptoKnight
                                             ThrottleSpeedPrivate();
 
                                             var investment = (account.Available * (decimal)0.9) / allCoins.Count;
+
+                                            // Investment override
+                                            var investmentOverride = ConfigurationSettings.AppSettings["investment-override"];
+                                            if(!string.IsNullOrWhiteSpace(investmentOverride))
+                                            {
+                                                if(decimal.TryParse(investmentOverride, out var newInvestment))
+                                                {
+                                                    investment = newInvestment;
+                                                }
+                                            }
+                                            
                                             var price = GetCurrentPrice(coin.Id);
                                             var trailingDistance = GetTrailingDistance(coin);
                                             var stopPrice = price + trailingDistance;
@@ -296,27 +307,28 @@ namespace CryptoKnight
 
                                                 Log.Information($"{client.Name}'s {order.Side.ToString()} order for {order.ProductId} driven from ${order.Price} to ${priceSell}.");
                                             }
+                                            else
+                                            {
+                                                // 10% stop loss.
+                                                if(order.Price * (decimal)0.90 > priceSell)
+                                                {
+                                                    client.OrdersService.CancelOrderByIdAsync(order.Id.ToString()).Wait();
+                                                    ThrottleSpeedPrivate();
+
+                                                    client.OrdersService.PlaceMarketOrderAsync(
+                                                         CoinbasePro.Services.Orders.Types.OrderSide.Sell,
+                                                         order.ProductId,
+                                                         order.Size,
+                                                         CoinbasePro.Services.Orders.Types.MarketOrderAmountType.Size
+                                                        ).Wait();
+                                                    ThrottleSpeedPrivate();
+
+                                                    Log.Information($"{client.Name}'s {order.Side.ToString()} order for {order.ProductId} 10% stop loss triggered and sold to prevent further loss.");
+                                                }
+                                            }
                                             break;
                                         default:
                                             break;
-                                    }
-
-                                    // Handle old orders
-                                    var lastWeek = DateTime.UtcNow.AddDays(-7);
-                                    if(order.Side == CoinbasePro.Services.Orders.Types.OrderSide.Sell && order.CreatedAt < lastWeek)
-                                    {
-                                        client.OrdersService.CancelOrderByIdAsync(order.Id.ToString()).Wait();
-                                        ThrottleSpeedPrivate();
-
-                                        client.OrdersService.PlaceMarketOrderAsync(
-                                             CoinbasePro.Services.Orders.Types.OrderSide.Sell,
-                                             order.ProductId,
-                                             order.Size,
-                                             CoinbasePro.Services.Orders.Types.MarketOrderAmountType.Size
-                                            ).Wait();
-                                        ThrottleSpeedPrivate();
-
-                                        Log.Information($"Sold aged order for {client.Name} on ${order.ProductId} for whatever it currently is going for.");
                                     }
                                 }
                                 catch (Exception exc)
@@ -550,7 +562,7 @@ namespace CryptoKnight
 
                 var usdAccount = accounts.FirstOrDefault(x => x.Currency == "USD");
 
-                foreach (var account in accounts.Where(x => x.Currency != "USD" && x.Currency != "USDC" && x.Currency != "USDT" && x.Balance > 0))
+                foreach (var account in accounts.Where(x => x.Currency != "USD" && x.Currency != "USDC" && x.Currency != "USDT"))
                 {
                     try
                     {
