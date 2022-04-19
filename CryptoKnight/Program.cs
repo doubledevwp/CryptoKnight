@@ -539,13 +539,11 @@ namespace CryptoKnight
             // Fee rates plus slippage rate of .5%.
             var expenseGap = makerFeeRate + takerFeeRate + (decimal)0.005;
 
-            // Difference in % between the current price and the high price.
-            var currentGap = (stat.High - stat.Last) / stat.High;
-
-            // See if the most recent price is below the summarized daily average.
-            var summarizedAverage = (stat.High + stat.Low + stat.Open + stat.Last) / 4;
-
-            return currentGap > expenseGap && stat.Last < summarizedAverage;
+            // Difference in % between the low price and the high price.
+            var currentGap = (stat.High - stat.Low) / stat.High;
+            
+            // Is there enough change to warrant a purchase? This also helps filter out stablecoins.
+            return currentGap > expenseGap;
         }
 
         private static decimal GetTrailingDistance(CoinbasePro.Services.Products.Models.Product coin)
