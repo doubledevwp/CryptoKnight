@@ -109,29 +109,66 @@ namespace CryptoKnight
 
                                     if (IsProfitable(stat, feeRates.MakerFeeRate, feeRates.TakerFeeRate))
                                     {
+                                        // Custom granularity (see config file).
+                                        var granularity = CoinbasePro.Services.Products.Types.CandleGranularity.Minutes15;
                                         var now = DateTime.UtcNow;
+                                        var startTime = now.AddMinutes(-30);
+                                        var granularityString = ConfigurationSettings.AppSettings["granularity"];
+
+                                        if(!string.IsNullOrWhiteSpace(granularityString))
+                                        {
+                                            if(Enum.TryParse(granularityString, out granularity))
+                                            {
+                                                switch (granularity)
+                                                {
+                                                    case CoinbasePro.Services.Products.Types.CandleGranularity.Minutes1:
+                                                        startTime = now.AddMinutes(-3);
+                                                        break;
+                                                    case CoinbasePro.Services.Products.Types.CandleGranularity.Minutes5:
+                                                        startTime = now.AddMinutes(-15);
+                                                        break;
+                                                    case CoinbasePro.Services.Products.Types.CandleGranularity.Minutes15:
+                                                        startTime = now.AddMinutes(-45);
+                                                        break;
+                                                    case CoinbasePro.Services.Products.Types.CandleGranularity.Hour1:
+                                                        startTime = now.AddHours(-3);
+                                                        break;
+                                                    case CoinbasePro.Services.Products.Types.CandleGranularity.Hour6:
+                                                        startTime = now.AddHours(-18);
+                                                        break;
+                                                    case CoinbasePro.Services.Products.Types.CandleGranularity.Hour24:
+                                                        startTime = now.AddHours(-72);
+                                                        break;
+                                                    default:
+                                                        break;
+                                                }
+                                            }
+                                        }
+
                                         var candles = Mammon.ProductsService.GetHistoricRatesAsync(
                                                 coin.Id,
-                                                now.AddMinutes(-30),
+                                                startTime,
                                                 now,
-                                                CoinbasePro.Services.Products.Types.CandleGranularity.Minutes15
+                                                granularity
                                             ).Result.OrderBy(x => x.Time).ToList();
 
-                                        if (candles?.Count != 2)
+                                        if (candles?.Count != 3)
                                         {
                                             break;
                                         }
 
-                                        var candle1 = candles.First();
-                                        var candle2 = candles.Last();
+                                        var candle1 = candles.First(); // Looking for a bear candle.
+                                        var candle2 = candles.ElementAt(1); // Looking for a bull candle.
+                                        var candle3 = candles.Last(); // Looking for a bull candle to confirm growth.
 
-                                        if (IsInsideBarPattern(candle1, candle2))
+                                        if (IsInsideBarPattern(candle1, candle2) && IsBullish(candle3))
                                         {
                                             // Initiate buy sequence for this client.
                                             var account = client.AccountsService.GetAllAccountsAsync().Result.FirstOrDefault(x => x.Currency == "USD");
                                             ThrottleSpeedPrivate();
 
-                                            var investment = (account.Available * (decimal)0.9) / allCoins.Count;
+                                            var spendingAmountAvailable = account.Available * (decimal)0.9;
+                                            var investment = spendingAmountAvailable / allCoins.Count;
 
                                             // Investment override
                                             var investmentOverride = ConfigurationSettings.AppSettings["investment-override"];
@@ -139,7 +176,10 @@ namespace CryptoKnight
                                             {
                                                 if(decimal.TryParse(investmentOverride, out var newInvestment))
                                                 {
-                                                    investment = newInvestment;
+                                                    if(newInvestment <= spendingAmountAvailable)
+                                                    {
+                                                        investment = newInvestment;
+                                                    }
                                                 }
                                             }
                                             
@@ -217,6 +257,21 @@ namespace CryptoKnight
                                     var slippageRate = (decimal)0.005;
                                     var unitCost = currentPrice + (currentPrice * (feeRates.MakerFeeRate + feeRates.TakerFeeRate + slippageRate));
                                     var profitMargin = (decimal)0.0025;
+
+                                    // Custom profit margin
+                                    var profitString = ConfigurationSettings.AppSettings["profit-margin"];
+
+                                    if(!string.IsNullOrWhiteSpace(profitString))
+                                    {
+                                        if(decimal.TryParse(profitString, out profitMargin))
+                                        {
+                                            if(profitMargin >= 1)
+                                            {
+                                                Log.Warning("Profit margin is extraordinarily high. Check config file. It should be a percent expressed in decimal form.");
+                                            }
+                                        }
+                                    }
+
                                     var price = unitCost + (unitCost * profitMargin);
 
                                     var thisProduct = allCoins.FirstOrDefault(x => x.Id == productId);
@@ -481,13 +536,16 @@ namespace CryptoKnight
         /// <returns></returns>
         private static bool IsProfitable(DailyStat stat, decimal makerFeeRate, decimal takerFeeRate)
         {
-            // Fee rates plus slippage rate of .5% plus my profit margin of 1/4%.
-            var expenseGap = makerFeeRate + takerFeeRate + (decimal)0.0075;
+            // Fee rates plus slippage rate of .5%.
+            var expenseGap = makerFeeRate + takerFeeRate + (decimal)0.005;
 
             // Difference in % between the current price and the high price.
             var currentGap = (stat.High - stat.Last) / stat.High;
 
-            return currentGap >= expenseGap;
+            // See if the most recent price is below the summarized daily average.
+            var summarizedAverage = (stat.High + stat.Low + stat.Open + stat.Last) / 4;
+
+            return currentGap > expenseGap && stat.Last < summarizedAverage;
         }
 
         private static decimal GetTrailingDistance(CoinbasePro.Services.Products.Models.Product coin)
