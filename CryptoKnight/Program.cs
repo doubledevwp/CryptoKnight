@@ -106,6 +106,7 @@ namespace CryptoKnight
                                 try
                                 {
                                     var feeRates = client.FeesService.GetCurrentFeesAsync().Result;
+                                    ThrottleSpeedPrivate();
 
                                     if (IsProfitable(stat, feeRates.MakerFeeRate, feeRates.TakerFeeRate))
                                     {
@@ -184,7 +185,7 @@ namespace CryptoKnight
                                             }
                                             
                                             var price = GetCurrentPrice(coin.Id);
-                                            var trailingDistance = feeRates.MakerFeeRate;
+                                            var trailingDistance = Math.Floor(price * feeRates.MakerFeeRate * coin.QuoteIncrement) / coin.QuoteIncrement;
                                             var stopPrice = price + trailingDistance;
                                             var limitPrice = stopPrice + trailingDistance;
 
