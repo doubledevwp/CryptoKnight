@@ -65,7 +65,15 @@ namespace CryptoKnight
             Log.Information("Make the world a better place...one 'Act of Random Kindness' at a time.");
 
             var allCoins = Mammon.ProductsService.GetAllProductsAsync().Result
-                .Where(x => x.QuoteCurrency == "USD" && !x.TradingDisabled && !x.CancelOnly && !x.LimitOnly && !x.PostOnly)
+                .Where(x => 
+                            x.QuoteCurrency == "USD" &&
+                            x.BaseCurrency != "USDC" &&
+                            x.BaseCurrency != "USDT" &&
+                            !x.TradingDisabled && 
+                            !x.CancelOnly && 
+                            !x.LimitOnly && 
+                            !x.PostOnly
+                            )
                 .ToList();
             ThrottleSpeedPublic();
 
@@ -90,8 +98,6 @@ namespace CryptoKnight
             {
                 try
                 {
-                    Console.Write("."); // Lets you know it's still scanning.
-
                     // refresh coin data every n minutes
                     if(DateTime.Now.Minute % 10 == 0)
                     {
@@ -105,6 +111,9 @@ namespace CryptoKnight
                         .OrderByDescending(x => x.Volume * x.Last) // Most USD volume
                         .Take(10)
                         .ToList();
+
+                    var coins = bestCoinStats.Select(x => x.ProductId).ToList();
+                    Log.Information($"CryptoKnight has chosen: {string.Join(",", coins)}.");
 
                     foreach (var coin in allCoins.Where(x => bestCoinStats.Any(y => y.ProductId == x.Id)))
                     {
@@ -196,7 +205,8 @@ namespace CryptoKnight
                                             }
                                             
                                             var price = GetCurrentPrice(coin.Id);
-                                            var trailingDistance = Math.Floor(price * feeRates.MakerFeeRate * coin.QuoteIncrement) / coin.QuoteIncrement;
+                                            var trailingDistance = (price * feeRates.MakerFeeRate);
+                                            trailingDistance -= trailingDistance % coin.QuoteIncrement;
                                             var stopPrice = price + trailingDistance;
                                             var limitPrice = stopPrice + trailingDistance;
 
@@ -294,7 +304,8 @@ namespace CryptoKnight
                                         price -= remainder;
                                     }
                                     var size = account.Available;
-                                    var trailingDistance = Math.Floor(currentPrice * feeRates.MakerFeeRate * thisProduct.QuoteIncrement) / thisProduct.QuoteIncrement;
+                                    var trailingDistance = (price * feeRates.MakerFeeRate);
+                                    trailingDistance -= trailingDistance % thisProduct.QuoteIncrement;
                                     var stopPrice = price + trailingDistance;
 
                                     if (size > thisProduct.BaseMaxSize)
@@ -438,8 +449,16 @@ namespace CryptoKnight
                     #endregion
 
                     allCoins = Mammon.ProductsService.GetAllProductsAsync().Result
-                    .Where(x => x.QuoteCurrency == "USD" && !x.TradingDisabled && !x.CancelOnly && !x.LimitOnly && !x.PostOnly)
-                    .ToList();
+                                    .Where(x =>
+                                                x.QuoteCurrency == "USD" &&
+                                                x.BaseCurrency != "USDC" &&
+                                                x.BaseCurrency != "USDT" &&
+                                                !x.TradingDisabled &&
+                                                !x.CancelOnly &&
+                                                !x.LimitOnly &&
+                                                !x.PostOnly
+                                                )
+                                    .ToList();
                     ThrottleSpeedPublic();
                 }
                 catch (Exception e)
