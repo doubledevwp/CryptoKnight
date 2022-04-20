@@ -110,7 +110,7 @@ namespace CryptoKnight
                                     if (IsProfitable(stat, feeRates.MakerFeeRate, feeRates.TakerFeeRate))
                                     {
                                         // Custom granularity (see config file).
-                                        var granularity = CoinbasePro.Services.Products.Types.CandleGranularity.Minutes15;
+                                        var granularity = GetCandleGranularity(coin.Id, client);
                                         var now = DateTime.UtcNow;
                                         var startTime = now.AddMinutes(-30);
                                         var granularityString = ConfigurationSettings.AppSettings["granularity"];
@@ -184,7 +184,7 @@ namespace CryptoKnight
                                             }
                                             
                                             var price = GetCurrentPrice(coin.Id);
-                                            var trailingDistance = GetTrailingDistance(coin);
+                                            var trailingDistance = feeRates.MakerFeeRate;
                                             var stopPrice = price + trailingDistance;
                                             var limitPrice = stopPrice + trailingDistance;
 
@@ -254,6 +254,7 @@ namespace CryptoKnight
                                     var productId = $"{account.Currency}-USD";
                                     var currentPrice = GetCurrentPrice(productId);
                                     var feeRates = client.FeesService.GetCurrentFeesAsync().Result;
+                                    ThrottleSpeedPrivate();
                                     var slippageRate = (decimal)0.005;
                                     var unitCost = currentPrice + (currentPrice * (feeRates.MakerFeeRate + feeRates.TakerFeeRate + slippageRate));
                                     var profitMargin = (decimal)0.0025;
@@ -281,7 +282,7 @@ namespace CryptoKnight
                                         price -= remainder;
                                     }
                                     var size = account.Available;
-                                    var trailingDistance = GetTrailingDistance(thisProduct);
+                                    var trailingDistance = Math.Floor(currentPrice * feeRates.MakerFeeRate * thisProduct.QuoteIncrement) / thisProduct.QuoteIncrement;
                                     var stopPrice = price + trailingDistance;
 
                                     if (size > thisProduct.BaseMaxSize)
@@ -325,9 +326,7 @@ namespace CryptoKnight
                                 {
                                     // Handle existing orders
                                     var currentPrice = GetCurrentPrice(order.ProductId);
-                                    var coin = allCoins.FirstOrDefault(x => x.Id == order.ProductId);
-
-                                    var trailingDistance = GetTrailingDistance(coin);
+                                    var trailingDistance = order.StopPrice - order.Price;
 
                                     switch (order.Side)
                                     {
@@ -530,6 +529,76 @@ namespace CryptoKnight
         }
         
         /// <summary>
+        /// Recursive function to get the lowest candlestick granularity where the % in change is greater than or equal to the maker fee rate
+        /// </summary>
+        /// <param name="productId"></param>
+        /// <param name="client"></param>
+        /// <param name="granularity"></param>
+        /// <returns></returns>
+        private static CoinbasePro.Services.Products.Types.CandleGranularity GetCandleGranularity(
+            string productId,
+            CoinbaseProClient client,
+            CoinbasePro.Services.Products.Types.CandleGranularity granularity = CoinbasePro.Services.Products.Types.CandleGranularity.Hour24
+            )
+        {
+            try
+            {
+                var endTime = DateTime.UtcNow;
+                var startTime = endTime;
+                var newGranularity = granularity;
+
+                switch (granularity)
+                {
+                    case CoinbasePro.Services.Products.Types.CandleGranularity.Minutes1:
+                        startTime = endTime.AddMinutes(-1);
+                        break;
+                    case CoinbasePro.Services.Products.Types.CandleGranularity.Minutes5:
+                        startTime = endTime.AddMinutes(-5);
+                        newGranularity = CoinbasePro.Services.Products.Types.CandleGranularity.Minutes1;
+                        break;
+                    case CoinbasePro.Services.Products.Types.CandleGranularity.Minutes15:
+                        startTime = endTime.AddMinutes(-15);
+                        newGranularity = CoinbasePro.Services.Products.Types.CandleGranularity.Minutes5;
+                        break;
+                    case CoinbasePro.Services.Products.Types.CandleGranularity.Hour1:
+                        startTime = endTime.AddHours(-1);
+                        newGranularity = CoinbasePro.Services.Products.Types.CandleGranularity.Minutes15;
+                        break;
+                    case CoinbasePro.Services.Products.Types.CandleGranularity.Hour6:
+                        startTime = endTime.AddHours(-6);
+                        newGranularity = CoinbasePro.Services.Products.Types.CandleGranularity.Hour1;
+                        break;
+                    case CoinbasePro.Services.Products.Types.CandleGranularity.Hour24:
+                        startTime = endTime.AddHours(-24);
+                        newGranularity = CoinbasePro.Services.Products.Types.CandleGranularity.Hour6;
+                        break;
+                    default:
+                        break;
+                }
+
+                var candle = client.ProductsService.GetHistoricRatesAsync(productId, startTime, endTime, granularity).Result.FirstOrDefault();
+                ThrottleSpeedPublic();
+                var candleChangeRate = (candle.High - candle.Low) / candle.High;
+                var fee = client.FeesService.GetCurrentFeesAsync().Result.MakerFeeRate;
+                ThrottleSpeedPrivate();
+
+                if (candleChangeRate > fee)
+                {
+
+                    return GetCandleGranularity(productId, client, newGranularity);
+                }
+                else
+                {
+                    return granularity;
+                }
+            }
+            catch
+            {
+                return granularity;
+            }
+        }
+
+        /// <summary>
         /// The point of this is to determine whether the price is low enough that it might be profitable in the same day.
         /// </summary>
         /// <param name="productId"></param>
@@ -543,39 +612,8 @@ namespace CryptoKnight
             var currentGap = (stat.High - stat.Low) / stat.High;
             
             // Is there enough change to warrant a purchase? This also helps filter out stablecoins.
-            return currentGap > expenseGap;
-        }
-
-        private static decimal GetTrailingDistance(CoinbasePro.Services.Products.Models.Product coin)
-        {
-            var now = DateTime.UtcNow;
-            var candles = Mammon.ProductsService.GetHistoricRatesAsync(
-                coin.Id,
-                now.AddMinutes(-5),
-                now,
-                CoinbasePro.Services.Products.Types.CandleGranularity.Minutes1
-                ).Result;
-            ThrottleSpeedPublic();
-
-            var highestHigh = candles.Max(x => x.High);
-            var lowestHigh = candles.Min(x => x.High);
-            decimal trailingDistance = 0;
-            if (highestHigh > 0 && lowestHigh > 0)
-            {
-                trailingDistance = (decimal)(highestHigh - lowestHigh);
-            }
-            else
-            {
-                var stats = _productStats.FirstOrDefault(x => x.ProductId == coin.Id);
-
-                trailingDistance = stats.Last * (decimal)0.005;
-                var remainder = trailingDistance % coin.QuoteIncrement;
-                if (remainder > 0)
-                {
-                    trailingDistance -= remainder;
-                }
-            }
-            return trailingDistance;
+            // We also want coins that are going up in value since that is where the profit is made.
+            return currentGap > expenseGap && stat.Open < stat.Last;
         }
         
         /// <summary>
