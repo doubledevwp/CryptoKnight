@@ -19,5 +19,3 @@ If this isn't your idea of perfect, then don't use it. There are a few other bot
 I suggest, if this makes you money, then give someone less fortunate a loan. When this bot doubles the investment amount, then take back your investment interest free and allow the bot to continue generating a passive income for the ones who need it.
 
 *CryptoKnight is not affiliated with any other usage of the name "CryptoKnight". Any such resemblance to an existing name is coincidental. It was just a cool name to call this project.*
-
-Trying a test commit across repos.
