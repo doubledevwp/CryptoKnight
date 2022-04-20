@@ -69,6 +69,8 @@ namespace CryptoKnight
                 .ToList();
             ThrottleSpeedPublic();
 
+            PopulateProductStats(allCoins);
+
             var channels = new List<CoinbasePro.WebSocket.Types.ChannelType>();
             channels.Add(CoinbasePro.WebSocket.Types.ChannelType.Ticker);
             Mammon.WebSocket.Start(allCoins.Select(x => x.Id).ToList(), channels);
@@ -90,23 +92,32 @@ namespace CryptoKnight
                 {
                     Console.Write("."); // Lets you know it's still scanning.
 
+                    // refresh coin data every n minutes
+                    if(DateTime.Now.Minute % 10 == 0)
+                    {
+                        PopulateProductStats(allCoins);
+                    }
+
                     #region Buy Coins
-                    _productStats.Clear();
-                    foreach (var coin in allCoins)
+                    var bestCoinStats = _productStats.Where(x => x.Open < x.Last) // Likely profitable
+                        .OrderByDescending(x => (x.High - x.Low) / x.High) // Most volatile
+                        .Take(50)
+                        .OrderByDescending(x => x.Volume * x.Last) // Most USD volume
+                        .Take(10)
+                        .ToList();
+
+                    foreach (var coin in allCoins.Where(x => bestCoinStats.Any(y => y.ProductId == x.Id)))
                     {
                         try
                         {
-                            var stat = new DailyStat(coin.Id, Mammon.ProductsService.GetProductStatsAsync(coin.Id).Result);
-                            ThrottleSpeedPublic();
-
-                            _productStats.Add(stat);
-
                             foreach (var client in Clauneck)
                             {
                                 try
                                 {
                                     var feeRates = client.FeesService.GetCurrentFeesAsync().Result;
                                     ThrottleSpeedPrivate();
+
+                                    var stat = bestCoinStats.FirstOrDefault(x => x.ProductId == coin.Id);
 
                                     if (IsProfitable(stat, feeRates.MakerFeeRate, feeRates.TakerFeeRate))
                                     {
@@ -169,7 +180,7 @@ namespace CryptoKnight
                                             ThrottleSpeedPrivate();
 
                                             var spendingAmountAvailable = account.Available * (decimal)0.9;
-                                            var investment = spendingAmountAvailable / allCoins.Count;
+                                            var investment = spendingAmountAvailable / bestCoinStats.Count;
 
                                             // Investment override
                                             var investmentOverride = ConfigurationSettings.AppSettings["investment-override"];
@@ -597,6 +608,21 @@ namespace CryptoKnight
             {
                 return granularity;
             }
+        }
+
+        private static void PopulateProductStats(List<CoinbasePro.Services.Products.Models.Product> allCoins)
+        {
+            _productStats.Clear();
+            Console.WriteLine("Now collecting data on the following coins:");
+            foreach (var coin in allCoins)
+            {
+                Console.Write($"{coin.Id},");
+                var stat = new DailyStat(coin.Id, Mammon.ProductsService.GetProductStatsAsync(coin.Id).Result);
+                ThrottleSpeedPublic();
+
+                _productStats.Add(stat);
+            }
+            Console.WriteLine(" and that's all of them!");
         }
 
         /// <summary>
